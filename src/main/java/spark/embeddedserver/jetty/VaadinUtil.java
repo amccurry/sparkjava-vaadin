@@ -19,13 +19,12 @@ import org.eclipse.jetty.webapp.WebXmlConfiguration;
 import com.vaadin.flow.server.startup.ServletContextListeners;
 
 import lombok.SneakyThrows;
-import spark.vaadin.VaadinDriver;
 
 public class VaadinUtil {
 
   @SneakyThrows
   public static Handler getHandler(String contextPath) {
-    URL webRootLocation = VaadinDriver.class.getResource("/META-INF/resources/");
+    URL webRootLocation = VaadinUtil.class.getResource("/META-INF/resources/");
     URI webRootUri = webRootLocation.toURI();
     WebAppContext context = new WebAppContext();
     context.setBaseResource(Resource.newResource(webRootUri));
