@@ -4,7 +4,7 @@
 	<groupId>sparkjava-vaadin</groupId>
 	<artifactId>sparkjava-vaadin</artifactId>
 	<name>sparkjava-vaadin</name>
-	<version>1.0</version>
+	<version>1.1-SNAPSHOT</version>
 	<packaging>jar</packaging>
 
 	<properties>
