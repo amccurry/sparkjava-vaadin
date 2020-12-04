@@ -1,4 +1,4 @@
-package spark.vaadin;
+package vaadin.util;
 
 import org.apache.commons.lang3.StringUtils;
 
@@ -10,7 +10,7 @@ import com.vaadin.flow.data.provider.InMemoryDataProvider;
 import com.vaadin.flow.data.value.ValueChangeMode;
 import com.vaadin.flow.function.ValueProvider;
 
-public class VaadinUtil {
+public class VaadinHelper {
 
   private static final String FILTER = "Filter";
 
@@ -20,8 +20,15 @@ public class VaadinUtil {
                .setHeader(header);
   }
 
-  public static <T> TextField addFilter(InMemoryDataProvider<T> dataProvider, Column<T> column, HeaderRow filterRow,
-      ValueProvider<T, ?> valueProvider) {
+  public static <T> TextField addStringFilter(InMemoryDataProvider<T> dataProvider, Column<T> column,
+      HeaderRow filterRow, ValueProvider<T, ?> valueProvider) {
+    return addFilter(dataProvider, column, filterRow, valueProvider,
+        (filterValue, value) -> StringUtils.containsIgnoreCase(value.toString(), filterValue));
+  }
+
+  @SuppressWarnings("unchecked")
+  public static <T, COLUMN_VALUE> TextField addFilter(InMemoryDataProvider<T> dataProvider, Column<T> column,
+      HeaderRow filterRow, ValueProvider<T, ?> valueProvider, ColumnFilter<COLUMN_VALUE> columnFilter) {
     TextField textField = new TextField();
     textField.addValueChangeListener(event -> {
       dataProvider.addFilter(t -> {
@@ -29,7 +36,7 @@ public class VaadinUtil {
         if (value == null) {
           return false;
         }
-        return StringUtils.containsIgnoreCase(value.toString(), textField.getValue());
+        return columnFilter.include(textField.getValue(), (COLUMN_VALUE) value);
       });
     });
     textField.setValueChangeMode(ValueChangeMode.EAGER);
@@ -38,5 +45,9 @@ public class VaadinUtil {
     textField.setSizeFull();
     textField.setPlaceholder(FILTER);
     return textField;
+  }
+
+  public interface ColumnFilter<T> {
+    boolean include(String filterValue, T value);
   }
 }

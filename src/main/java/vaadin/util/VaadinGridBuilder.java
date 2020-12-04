@@ -1,7 +1,7 @@
-package spark.vaadin;
+package vaadin.util;
 
-import static spark.vaadin.VaadinUtil.addFilter;
-import static spark.vaadin.VaadinUtil.createColumn;
+import static vaadin.util.VaadinHelper.addStringFilter;
+import static vaadin.util.VaadinHelper.createColumn;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -72,7 +72,7 @@ public class VaadinGridBuilder<T> {
     }
     HeaderRow filterRow = _grid.appendHeaderRow();
     for (ColumnDef<T, ?> columnDef : _columnDefs) {
-      addFilter(_dataProvider, columnDef.column, filterRow, columnDef.valueProvider);
+      addStringFilter(_dataProvider, columnDef.column, filterRow, columnDef.valueProvider);
     }
     ComponentEventListener<ItemClickEvent<T>> listener = event -> {
       Column<T> column = event.getColumn();
