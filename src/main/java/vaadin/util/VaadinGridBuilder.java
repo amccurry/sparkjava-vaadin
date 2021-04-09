@@ -23,16 +23,21 @@ import com.vaadin.flow.router.internal.HasUrlParameterFormat;
 public class VaadinGridBuilder<T> {
 
   private final Grid<T> _grid;
-  private final InMemoryDataProvider<T> _dataProvider;
   private final List<ColumnDef<T, ?>> _columnDefs = new ArrayList<>();
 
   private VaadinGridBuilder(Grid<T> grid, InMemoryDataProvider<T> dataProvider) {
     _grid = grid;
-    _dataProvider = dataProvider;
   }
 
   public static <T> VaadinGridBuilder<T> create(List<T> list) {
     ListDataProvider<T> dataProvider = DataProvider.ofCollection(list);
+    Grid<T> grid = new Grid<>();
+    grid.setHeightByRows(true);
+    grid.setItems(dataProvider);
+    return create(grid, dataProvider);
+  }
+
+  public static <T> VaadinGridBuilder<T> create(ListDataProvider<T> dataProvider) {
     Grid<T> grid = new Grid<>();
     grid.setHeightByRows(true);
     grid.setItems(dataProvider);
@@ -72,15 +77,15 @@ public class VaadinGridBuilder<T> {
     }
     HeaderRow filterRow = _grid.appendHeaderRow();
     for (ColumnDef<T, ?> columnDef : _columnDefs) {
-      addStringFilter(_dataProvider, columnDef.column, filterRow, columnDef.valueProvider);
+      addStringFilter(_grid, columnDef.column, filterRow, columnDef.valueProvider);
     }
     ComponentEventListener<ItemClickEvent<T>> listener = event -> {
       Column<T> column = event.getColumn();
-      T tackNetwork = event.getItem();
+      T item = event.getItem();
       String key = column.getKey();
       for (ColumnDef<T, ?> columnDef : _columnDefs) {
         if (columnDef.header.equals(key) && columnDef.navigationTarget != null) {
-          Object o = columnDef.valueProvider.apply(tackNetwork);
+          Object o = columnDef.valueProvider.apply(item);
           if (o != null) {
             UI.getCurrent()
               .navigate(columnDef.navigationTarget, HasUrlParameterFormat.getParameters(o.toString()));

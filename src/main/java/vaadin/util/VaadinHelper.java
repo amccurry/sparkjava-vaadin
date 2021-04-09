@@ -20,17 +20,18 @@ public class VaadinHelper {
                .setHeader(header);
   }
 
-  public static <T> TextField addStringFilter(InMemoryDataProvider<T> dataProvider, Column<T> column,
-      HeaderRow filterRow, ValueProvider<T, ?> valueProvider) {
-    return addFilter(dataProvider, column, filterRow, valueProvider,
+  public static <T> TextField addStringFilter(Grid<T> grid, Column<T> column, HeaderRow filterRow,
+      ValueProvider<T, ?> valueProvider) {
+    return addFilter(grid, column, filterRow, valueProvider,
         (filterValue, value) -> StringUtils.containsIgnoreCase(value.toString(), filterValue));
   }
 
   @SuppressWarnings("unchecked")
-  public static <T, COLUMN_VALUE> TextField addFilter(InMemoryDataProvider<T> dataProvider, Column<T> column,
-      HeaderRow filterRow, ValueProvider<T, ?> valueProvider, ColumnFilter<COLUMN_VALUE> columnFilter) {
+  public static <T, COLUMN_VALUE> TextField addFilter(Grid<T> grid, Column<T> column, HeaderRow filterRow,
+      ValueProvider<T, ?> valueProvider, ColumnFilter<COLUMN_VALUE> columnFilter) {
     TextField textField = new TextField();
     textField.addValueChangeListener(event -> {
+      InMemoryDataProvider<T> dataProvider = (InMemoryDataProvider<T>) grid.getDataProvider();
       dataProvider.addFilter(t -> {
         Object value = valueProvider.apply(t);
         if (value == null) {
