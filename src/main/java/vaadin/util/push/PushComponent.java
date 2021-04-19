@@ -1,6 +1,6 @@
 package vaadin.util.push;
 
-public interface PushView {
+public interface PushComponent {
 
   void push();
 

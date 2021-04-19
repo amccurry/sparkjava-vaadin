@@ -6,12 +6,17 @@ import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.TimeUnit;
 
+import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.MapMaker;
+import com.vaadin.flow.component.UIDetachedException;
 
+import lombok.extern.slf4j.Slf4j;
+
+@Slf4j
 public class PushManager {
 
   public static final PushManager INSTANCE = new PushManager();
-  private final Set<PushView> _pushCache;
+  private final Set<PushComponent> _pushCache;
   private final Timer _timer;
 
   private PushManager() {
@@ -24,21 +29,34 @@ public class PushManager {
     _timer.schedule(new TimerTask() {
       @Override
       public void run() {
-        for (PushView pushView : _pushCache) {
-          if (pushView != null) {
-            pushView.push();
-          }
+        for (PushComponent pushView : ImmutableSet.copyOf(_pushCache)) {
+          doPush(pushView);
         }
       }
+
     }, delay, period);
   }
 
-  public void register(PushView pushView) {
+  public void register(PushComponent pushView) {
     _pushCache.add(pushView);
   }
 
-  public void deregister(PushView pushView) {
+  public void deregister(PushComponent pushView) {
     _pushCache.remove(pushView);
+  }
+
+  private void doPush(PushComponent pushView) {
+    if (pushView != null) {
+      try {
+        pushView.push();
+      } catch (Throwable t) {
+        if (t instanceof UIDetachedException) {
+          deregister(pushView);
+        } else {
+          log.error("Unknown error while trying to push {}", t);
+        }
+      }
+    }
   }
 
 }

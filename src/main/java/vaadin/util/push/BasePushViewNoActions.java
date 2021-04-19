@@ -3,13 +3,9 @@ package vaadin.util.push;
 import java.util.Arrays;
 import java.util.List;
 
-import com.vaadin.flow.component.AbstractField.ComponentValueChangeEvent;
-import com.vaadin.flow.component.HasValue.ValueChangeListener;
-import com.vaadin.flow.component.ItemLabelGenerator;
-import com.vaadin.flow.component.select.Select;
-import com.vaadin.flow.function.SerializablePredicate;
+import vaadin.util.action.Action;
 
-public abstract class BasePushViewNoActions<ITEM> extends BasePushView<ITEM, Void> {
+public abstract class BasePushViewNoActions<ITEM> extends BasePushView<ITEM> {
 
   private static final long serialVersionUID = -6721924595284957595L;
 
@@ -17,24 +13,12 @@ public abstract class BasePushViewNoActions<ITEM> extends BasePushView<ITEM, Voi
 
   }
 
-  @Override
-
-  protected final ItemLabelGenerator<Void> actionLabels() {
-    throw new RuntimeException("Not Implemented");
+  protected final boolean hasActions() {
+    return false;
   }
 
   @Override
-  protected final ValueChangeListener<? super ComponentValueChangeEvent<Select<Void>, Void>> actionListener() {
-    throw new RuntimeException("Not Implemented");
-  }
-
-  @Override
-  protected final SerializablePredicate<Void> actionsEnabled() {
-    throw new RuntimeException("Not Implemented");
-  }
-
-  @Override
-  protected final List<Void> getActions() {
+  protected final List<Action> getActions() {
     return Arrays.asList();
   }
 
