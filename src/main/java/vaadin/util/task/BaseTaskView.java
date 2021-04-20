@@ -54,7 +54,7 @@ public abstract class BaseTaskView extends BasePushView<Task> {
 
             String id = UUID.randomUUID()
                             .toString();
-            
+
             Task task = Task.builder()
                             .name("Test " + System.currentTimeMillis())
                             .description("Description " + id)

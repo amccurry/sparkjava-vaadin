@@ -10,13 +10,14 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.NoArgsConstructor;
 import lombok.Value;
+import vaadin.util.push.Item;
 
 @Value
 @NoArgsConstructor(force = true, access = AccessLevel.PRIVATE)
 @AllArgsConstructor
 @Builder(toBuilder = true)
 @JsonIgnoreProperties(ignoreUnknown = true)
-public class Task {
+public class Task implements Item<Task> {
 
   @Builder.Default
   String id = UUID.randomUUID()
@@ -47,6 +48,16 @@ public class Task {
              .append('}');
     }
     return builder.toString();
+  }
+
+  @Override
+  public String getSearchString() {
+    return id + " " + created + " " + name + " " + description + " " + user + " " + taskStatus + " " + throwable;
+  }
+
+  @Override
+  public int compareTo(Task o) {
+    return name.compareTo(o.getName());
   }
 
 }

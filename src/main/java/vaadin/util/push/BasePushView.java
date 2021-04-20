@@ -1,6 +1,7 @@
 package vaadin.util.push;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -15,6 +16,11 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
+import org.slf4j.helpers.FormattingTuple;
+import org.slf4j.helpers.MessageFormatter;
+
+import com.google.common.base.Splitter;
+import com.google.common.collect.ImmutableList;
 import com.vaadin.flow.component.AbstractField;
 import com.vaadin.flow.component.AttachEvent;
 import com.vaadin.flow.component.ClickEvent;
@@ -37,12 +43,12 @@ import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.grid.GridVariant;
 import com.vaadin.flow.component.grid.ItemClickEvent;
 import com.vaadin.flow.component.html.Div;
-import com.vaadin.flow.component.html.Paragraph;
 import com.vaadin.flow.component.icon.Icon;
 import com.vaadin.flow.component.icon.VaadinIcon;
 import com.vaadin.flow.component.menubar.MenuBar;
 import com.vaadin.flow.component.menubar.MenuBarVariant;
 import com.vaadin.flow.component.notification.Notification;
+import com.vaadin.flow.component.textfield.TextField;
 import com.vaadin.flow.data.provider.DataCommunicator;
 import com.vaadin.flow.data.provider.DataProvider;
 import com.vaadin.flow.data.provider.ListDataProvider;
@@ -59,8 +65,10 @@ import vaadin.util.filter.FilterPanel;
 import vaadin.util.filter.FilterPanelView;
 
 @Slf4j
-public abstract class BasePushView<ITEM> extends Div implements PushComponent, SerializablePredicate<ITEM> {
+public abstract class BasePushView<ITEM extends Item<ITEM>> extends Div
+    implements PushComponent, SerializablePredicate<ITEM> {
 
+  private static final Splitter SPACE_SPLITTER = Splitter.on(" ");
   private static final long serialVersionUID = 9064915736318224076L;
   private static final Comparator<Action> COMPARATOR = (o1, o2) -> o1.getName()
                                                                      .compareTo(o2.getName());
@@ -68,23 +76,20 @@ public abstract class BasePushView<ITEM> extends Div implements PushComponent, S
   protected final AtomicReference<UI> _uiRef = new AtomicReference<>();
   protected final ListDataProvider<ITEM> _dataProvider;
   protected final Grid<ITEM> _grid;
-  protected final Div _progressBarDiv;
   protected final AtomicBoolean _shift = new AtomicBoolean();
   protected final DataCommunicator<ITEM> _dataCommunicator;
   protected final MenuBar _actionMenuBar;
   protected final List<Action> _actions;
   protected final Map<String, MenuItem> _actionMenuItems = new ConcurrentHashMap<>();
-  protected final Text _selectedCount;
+  protected final AtomicReference<SerializablePredicate<ITEM>> _searchPredicate = new AtomicReference<>(t -> true);
+  protected final Div _menuDiv;
 
   public BasePushView() {
     _dataProvider = DataProvider.ofCollection(getDataItems());
     _grid = createGrid(_dataProvider);
     _grid.addThemeVariants(GridVariant.LUMO_ROW_STRIPES);
+    _dataProvider.setSortComparator((o1, o2) -> o1.compareTo(o2));
     _dataCommunicator = _grid.getDataCommunicator();
-
-    Paragraph paragraph = new Paragraph();
-    paragraph.add(" Selected Items: ");
-    paragraph.add(_selectedCount = new Text("-"));
 
     List<Action> actions = getActions();
     if (actions != null && !actions.isEmpty()) {
@@ -110,11 +115,10 @@ public abstract class BasePushView<ITEM> extends Div implements PushComponent, S
 
       _actionMenuBar = new MenuBar();
       _actionMenuBar.addThemeVariants(MenuBarVariant.LUMO_PRIMARY);
-      Div menuDiv = new Div();
-      menuDiv.add(new Text("Actions "));
-      menuDiv.add(new Icon(VaadinIcon.CHEVRON_CIRCLE_DOWN_O));
+      _menuDiv = new Div();
+      updateMenuLabel();
 
-      MenuItem actionsMenuItem = _actionMenuBar.addItem(menuDiv);
+      MenuItem actionsMenuItem = _actionMenuBar.addItem(_menuDiv);
       SubMenu actionsSubMenu = actionsMenuItem.getSubMenu();
       for (Action action : _actions) {
         MenuItem menuItem = actionsSubMenu.addItem(action.getName());
@@ -131,48 +135,91 @@ public abstract class BasePushView<ITEM> extends Div implements PushComponent, S
                 .set("margin-right", "10px");
       actionsDiv.add(_actionMenuBar);
 
-      _progressBarDiv = new Div();
-      _progressBarDiv.getStyle()
-                     .set("display", "inline-block")
-                     .set("margin-right", "10px");
+      topDiv.add(actionsDiv);
 
-      _progressBarDiv.add(paragraph);
-
-      topDiv.add(actionsDiv, _progressBarDiv);
-
+      TextField textField = new TextField();
+      textField.setPlaceholder("search");
+      textField.addValueChangeListener(event -> {
+        String value = textField.getValue();
+        List<String> parts = SPACE_SPLITTER.splitToList(value);
+        List<String> tokens = new ArrayList<>();
+        for (String part : parts) {
+          String s = part.trim()
+                         .toLowerCase();
+          if (!s.isEmpty()) {
+            tokens.add(part);
+          }
+        }
+        if (tokens.isEmpty()) {
+          _searchPredicate.set(t -> true);
+        } else {
+          _searchPredicate.set(t -> {
+            String searchString = getSimpleSearchString(t);
+            if (searchString == null) {
+              return true;
+            }
+            String lowerCase = searchString.toLowerCase();
+            for (String token : tokens) {
+              if (lowerCase.contains(token)) {
+                return true;
+              }
+            }
+            return false;
+          });
+        }
+        push();
+      });
+      textField.setValueChangeMode(ValueChangeMode.LAZY);
+      textField.setWidth("70%");
+      topDiv.add(textField);
       add(topDiv);
 
       _grid.addSelectionListener(getSelectionListener());
     } else {
       _actions = null;
       _actionMenuBar = null;
-      _progressBarDiv = null;
-
+      _menuDiv = null;
     }
     _grid.addItemClickListener(onRowClickSelectOrDeselect());
     add(_grid);
-    if (!(actions != null && !actions.isEmpty())) {
-      add(paragraph);
+
+  }
+
+  protected void updateMenuLabel() {
+    int size = _grid.getSelectedItems()
+                    .size();
+    _menuDiv.removeAll();
+    if (size > 0) {
+      _menuDiv.add(new Text("Actions (" + size + ") "));
+      _menuDiv.add(new Icon(VaadinIcon.CHEVRON_CIRCLE_DOWN_O));
+    } else {
+      _menuDiv.add(new Text("Actions "));
+      _menuDiv.add(new Icon(VaadinIcon.CHEVRON_CIRCLE_DOWN_O));
     }
+  }
+
+  protected String getSimpleSearchString(ITEM item) {
+    return item.getSearchString();
   }
 
   @Override
   public boolean test(ITEM t) {
     FilterPanel<ITEM> filterPanel = getFilterPanel();
     if (filterPanel == null) {
-      return true;
+      return _searchPredicate.get()
+                             .test(t);
     }
-    return filterPanel.test(t);
+    return filterPanel.test(t) && _searchPredicate.get()
+                                                  .test(t);
   }
 
   private ComponentEventListener<ClickEvent<MenuItem>> getActionListener(Action action) {
     ComponentEventListener<ClickEvent<MenuItem>> listener = action.getListener();
-    if (!action.isClearSelectionsAndPushAfterAction()) {
-      return listener;
-    }
     return event -> {
       listener.onComponentEvent(event);
-      clearAndPush();
+      if (action.isClearSelectionsAndPushAfterAction()) {
+        clearAndPush();
+      }
     };
   }
 
@@ -204,7 +251,7 @@ public abstract class BasePushView<ITEM> extends Div implements PushComponent, S
   @Override
   protected void onDetach(DetachEvent detachEvent) {
     log.debug("detach");
-    PushManager.INSTANCE.register(this);
+    PushManager.INSTANCE.deregister(this);
   }
 
   @Override
@@ -285,11 +332,9 @@ public abstract class BasePushView<ITEM> extends Div implements PushComponent, S
     }
 
     Button confirmButton = new Button(confirmButtonLabel, e -> {
-      // try (ActionProgress actionProgress = createActionProgress()) {
       dialog.close();
       dialogAction.action();
       clearAndPush();
-      // }
     });
     confirmButton.addThemeVariants(ButtonVariant.LUMO_ERROR);
     confirmButton.setEnabled(validation.validate());
@@ -320,8 +365,21 @@ public abstract class BasePushView<ITEM> extends Div implements PushComponent, S
   protected void doPush(UI ui) {
     ui.access(() -> {
       _dataCommunicator.reset();
-      _selectedCount.setText(Integer.toString(_grid.getSelectedItems()
-                                                   .size()));
+      updateMenuLabel();
+
+      Collection<ITEM> currentItems = _dataProvider.getItems();
+      List<ITEM> dataItems = getDataItems();
+      for (ITEM item : dataItems) {
+        if (!currentItems.contains(item)) {
+          currentItems.add(item);
+        }
+      }
+      ImmutableList<ITEM> list = ImmutableList.copyOf(currentItems);
+      for (ITEM item : list) {
+        if (!dataItems.contains(item)) {
+          currentItems.remove(item);
+        }
+      }
       ui.push();
     });
   }
@@ -339,10 +397,10 @@ public abstract class BasePushView<ITEM> extends Div implements PushComponent, S
     };
   }
 
-  protected ActionEnabled offWhenNothingSelected(ActionEnabled actionEnabled) {
+  protected ActionEnabled disabledWhenNothingSelected(ActionEnabled actionEnabled) {
     return () -> {
-      if (_grid.getSelectedItems()
-               .isEmpty()) {
+      Set<ITEM> selectedItems = _grid.getSelectedItems();
+      if (selectedItems == null || selectedItems.isEmpty()) {
         return false;
       }
       return actionEnabled.isEnabled();
@@ -363,8 +421,9 @@ public abstract class BasePushView<ITEM> extends Div implements PushComponent, S
     return _actions != null && !_actions.isEmpty();
   }
 
-  protected void sendNotification(String message) {
-    Notification.show(message, (int) TimeUnit.SECONDS.toMillis(3), Notification.Position.TOP_END);
+  protected void sendNotification(String message, Object... args) {
+    FormattingTuple ft = MessageFormatter.arrayFormat(message, args, null);
+    Notification.show(ft.getMessage(), (int) TimeUnit.SECONDS.toMillis(3), Notification.Position.TOP_END);
   }
 
   protected abstract List<Action> getActions();

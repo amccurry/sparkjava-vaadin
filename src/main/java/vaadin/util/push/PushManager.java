@@ -48,6 +48,7 @@ public class PushManager {
   private void doPush(PushComponent pushView) {
     if (pushView != null) {
       try {
+        log.debug("push {}", pushView);
         pushView.push();
       } catch (Throwable t) {
         if (t instanceof UIDetachedException) {

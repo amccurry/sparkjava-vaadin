@@ -5,7 +5,7 @@ import java.util.List;
 
 import vaadin.util.action.Action;
 
-public abstract class BasePushViewNoActions<ITEM> extends BasePushView<ITEM> {
+public abstract class BasePushViewNoActions<ITEM extends Item<ITEM>> extends BasePushView<ITEM> {
 
   private static final long serialVersionUID = -6721924595284957595L;
 
