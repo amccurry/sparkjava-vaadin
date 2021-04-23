@@ -24,7 +24,7 @@ import com.vaadin.flow.router.internal.HasUrlParameterFormat;
 
 public class VaadinGridBuilder<T> {
 
-  private static final String YYYY_MM_DD_HH_MM_SS = "YYYY'-'MM'-'dd' 'HH':'mm':'ss";
+  private static final String YYYY_MM_DD_HH_MM_SS = "yyyy'-'MM'-'dd' 'HH':'mm':'ss";
   private final Grid<T> _grid;
   private final List<ColumnDef<T, ?>> _columnDefs = new ArrayList<>();
   private SerializablePredicate<T> _filter;

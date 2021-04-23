@@ -25,7 +25,7 @@ public class PushManager {
                                                          .makeMap());
     _timer = new Timer("push-thread", true);
     long delay = TimeUnit.SECONDS.toMillis(5);
-    long period = TimeUnit.SECONDS.toMillis(5);
+    long period = TimeUnit.SECONDS.toMillis(30);
     _timer.schedule(new TimerTask() {
       @Override
       public void run() {
@@ -33,7 +33,6 @@ public class PushManager {
           doPush(pushView);
         }
       }
-
     }, delay, period);
   }
 

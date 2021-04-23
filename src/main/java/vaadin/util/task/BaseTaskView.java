@@ -50,6 +50,7 @@ public abstract class BaseTaskView extends BasePushView<Task> {
 
                 }
               }
+              throw new RuntimeException("error");
             };
 
             String id = UUID.randomUUID()
@@ -65,6 +66,14 @@ public abstract class BaseTaskView extends BasePushView<Task> {
             log.info("user {} {}", getCurrentUser(), task.getUser());
 
             TASK_MANAGER.submitTask(task);
+          })
+          .actionEnabled(() -> true)
+          .build();
+
+    Action.builder()
+          .name("Error Task")
+          .listener(event -> {
+            throw new RuntimeException("error");
           })
           .actionEnabled(() -> true)
           .build();

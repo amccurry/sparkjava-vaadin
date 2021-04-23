@@ -1,6 +1,9 @@
 package vaadin.util.push;
 
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
@@ -38,6 +41,7 @@ import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.contextmenu.MenuItem;
 import com.vaadin.flow.component.contextmenu.SubMenu;
+import com.vaadin.flow.component.details.Details;
 import com.vaadin.flow.component.dialog.Dialog;
 import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.grid.GridVariant;
@@ -48,6 +52,7 @@ import com.vaadin.flow.component.icon.VaadinIcon;
 import com.vaadin.flow.component.menubar.MenuBar;
 import com.vaadin.flow.component.menubar.MenuBarVariant;
 import com.vaadin.flow.component.notification.Notification;
+import com.vaadin.flow.component.notification.NotificationVariant;
 import com.vaadin.flow.component.textfield.TextField;
 import com.vaadin.flow.data.provider.DataCommunicator;
 import com.vaadin.flow.data.provider.DataProvider;
@@ -92,94 +97,103 @@ public abstract class BasePushView<ITEM extends Item<ITEM>> extends Div
     _dataCommunicator = _grid.getDataCommunicator();
 
     List<Action> actions = getActions();
-    if (actions != null && !actions.isEmpty()) {
-      _actions = new ArrayList<>(actions);
-      Collections.sort(_actions, COMPARATOR);
+    if (actions == null) {
+      actions = Arrays.asList();
+    }
+    _actions = new ArrayList<>(actions);
+    Collections.sort(_actions, COMPARATOR);
+    if (!_actions.isEmpty()) {
       _grid.setSelectionMode(Grid.SelectionMode.MULTI);
+    }
 
-      ComponentUtil.addListener(this, KeyDownEvent.class, event -> {
-        if (event.getKey()
-                 .matches("Shift")) {
-          log.debug("Shift key down");
-          _shift.set(true);
-        }
-      });
-
-      ComponentUtil.addListener(this, KeyUpEvent.class, event -> {
-        if (event.getKey()
-                 .matches("Shift")) {
-          log.debug("Shift key up");
-          _shift.set(false);
-        }
-      });
-
-      _actionMenuBar = new MenuBar();
-      _actionMenuBar.addThemeVariants(MenuBarVariant.LUMO_PRIMARY);
-      _menuDiv = new Div();
-      updateMenuLabel();
-
-      MenuItem actionsMenuItem = _actionMenuBar.addItem(_menuDiv);
-      SubMenu actionsSubMenu = actionsMenuItem.getSubMenu();
-      for (Action action : _actions) {
-        MenuItem menuItem = actionsSubMenu.addItem(action.getName());
-        menuItem.addClickListener(getActionListener(action));
-        menuItem.setEnabled(action.getActionEnabled()
-                                  .isEnabled());
-        _actionMenuItems.put(action.getName(), menuItem);
+    ComponentUtil.addListener(this, KeyDownEvent.class, event -> {
+      if (event.getKey()
+               .matches("Shift")) {
+        log.debug("Shift key down");
+        _shift.set(true);
       }
+    });
 
-      Div topDiv = new Div();
-      Div actionsDiv = new Div();
-      actionsDiv.getStyle()
-                .set("display", "inline-block")
-                .set("margin-right", "10px");
-      actionsDiv.add(_actionMenuBar);
+    ComponentUtil.addListener(this, KeyUpEvent.class, event -> {
+      if (event.getKey()
+               .matches("Shift")) {
+        log.debug("Shift key up");
+        _shift.set(false);
+      }
+    });
 
-      topDiv.add(actionsDiv);
+    _actionMenuBar = new MenuBar();
+    _actionMenuBar.addThemeVariants(MenuBarVariant.LUMO_PRIMARY);
+    _menuDiv = new Div();
+    updateMenuLabel();
 
-      TextField textField = new TextField();
-      textField.setPlaceholder("search");
-      textField.addValueChangeListener(event -> {
-        String value = textField.getValue();
-        List<String> parts = SPACE_SPLITTER.splitToList(value);
-        List<String> tokens = new ArrayList<>();
-        for (String part : parts) {
-          String s = part.trim()
-                         .toLowerCase();
-          if (!s.isEmpty()) {
-            tokens.add(part);
-          }
+    MenuItem actionsMenuItem = _actionMenuBar.addItem(_menuDiv);
+    SubMenu actionsSubMenu = actionsMenuItem.getSubMenu();
+    for (Action action : _actions) {
+      MenuItem menuItem = actionsSubMenu.addItem(action.getName());
+      menuItem.addClickListener(getActionListener(action));
+      menuItem.setEnabled(action.getActionEnabled()
+                                .isEnabled());
+      _actionMenuItems.put(action.getName(), menuItem);
+    }
+
+    Div topDiv = new Div();
+    Div actionsDiv = new Div();
+    actionsDiv.getStyle()
+              .set("display", "inline-block")
+              .set("margin-right", "10px");
+
+    actionsDiv.add(_actionMenuBar);
+
+    if (_actions.isEmpty()) {
+      actionsDiv.setVisible(false);
+    }
+
+    Button button = new Button();
+    button.setIcon(new Icon(VaadinIcon.REFRESH));
+    button.addThemeVariants(ButtonVariant.LUMO_SUCCESS, ButtonVariant.LUMO_PRIMARY);
+    button.addClickListener(event -> push());
+
+    topDiv.add(button);
+    topDiv.add(actionsDiv);
+
+    TextField textField = new TextField();
+    textField.setPlaceholder("search");
+    textField.addValueChangeListener(event -> {
+      String value = textField.getValue();
+      List<String> parts = SPACE_SPLITTER.splitToList(value);
+      List<String> tokens = new ArrayList<>();
+      for (String part : parts) {
+        String s = part.trim()
+                       .toLowerCase();
+        if (!s.isEmpty()) {
+          tokens.add(part);
         }
-        if (tokens.isEmpty()) {
-          _searchPredicate.set(t -> true);
-        } else {
-          _searchPredicate.set(t -> {
-            String searchString = getSimpleSearchString(t);
-            if (searchString == null) {
+      }
+      if (tokens.isEmpty()) {
+        _searchPredicate.set(t -> true);
+      } else {
+        _searchPredicate.set(t -> {
+          String searchString = getSimpleSearchString(t);
+          if (searchString == null) {
+            return true;
+          }
+          String lowerCase = searchString.toLowerCase();
+          for (String token : tokens) {
+            if (lowerCase.contains(token)) {
               return true;
             }
-            String lowerCase = searchString.toLowerCase();
-            for (String token : tokens) {
-              if (lowerCase.contains(token)) {
-                return true;
-              }
-            }
-            return false;
-          });
-        }
-        push();
-      });
-      textField.setValueChangeMode(ValueChangeMode.LAZY);
-      textField.setWidth("70%");
-      topDiv.add(textField);
-      add(topDiv);
-
-      _grid.addSelectionListener(getSelectionListener());
-    } else {
-      _actions = null;
-      _actionMenuBar = null;
-      _menuDiv = null;
-    }
+          }
+          return false;
+        });
+      }
+      push();
+    });
+    textField.setValueChangeMode(ValueChangeMode.LAZY);
+    textField.setWidth("70%");
+    topDiv.add(textField);
+    add(topDiv);
+    _grid.addSelectionListener(getSelectionListener());
     _grid.addItemClickListener(onRowClickSelectOrDeselect());
     add(_grid);
 
@@ -216,7 +230,12 @@ public abstract class BasePushView<ITEM extends Item<ITEM>> extends Div
   private ComponentEventListener<ClickEvent<MenuItem>> getActionListener(Action action) {
     ComponentEventListener<ClickEvent<MenuItem>> listener = action.getListener();
     return event -> {
-      listener.onComponentEvent(event);
+      try {
+        listener.onComponentEvent(event);
+      } catch (Throwable t) {
+        log.error("Unknown error", t);
+        sendError(t.getMessage(), t);
+      }
       if (action.isClearSelectionsAndPushAfterAction()) {
         clearAndPush();
       }
@@ -421,9 +440,60 @@ public abstract class BasePushView<ITEM extends Item<ITEM>> extends Div
     return _actions != null && !_actions.isEmpty();
   }
 
+  protected void sendSuccess(String message, Object... args) {
+    Text text = getMessageText(message, args);
+    sendNotificationInternal(text, (int) TimeUnit.SECONDS.toMillis(3), NotificationVariant.LUMO_SUCCESS, args);
+  }
+
+  protected void sendError(String message, Throwable t, Object... args) {
+    Div div = new Div();
+
+    Notification notification = new Notification();
+    
+    Button button = new Button();
+    button.addThemeVariants(ButtonVariant.LUMO_ERROR, ButtonVariant.LUMO_PRIMARY);
+    button.setIcon(new Icon(VaadinIcon.CLOSE_CIRCLE_O));
+    button.addClickListener(event -> notification.close());
+
+    Text text = getMessageText(message, args);
+    div.add(button, text);
+
+    if (t != null) {
+      StringWriter writer = new StringWriter();
+      try (PrintWriter pw = new PrintWriter(writer)) {
+        t.printStackTrace(pw);
+      }
+      Details component = new Details("Stack Trace", new Text(writer.toString()));
+      div.add(component);
+    }
+
+    notification.setPosition(Notification.Position.TOP_END);
+    notification.setDuration(0);
+    notification.add(div);
+    notification.addThemeVariants(NotificationVariant.LUMO_ERROR);
+    notification.open();
+
+  }
+
   protected void sendNotification(String message, Object... args) {
+    Text text = getMessageText(message, args);
+    sendNotificationInternal(text, (int) TimeUnit.SECONDS.toMillis(3), NotificationVariant.LUMO_PRIMARY, args);
+  }
+
+  private void sendNotificationInternal(Component component, int duration, NotificationVariant variant,
+      Object... args) {
+    Notification notification = new Notification();
+    notification.setPosition(Notification.Position.TOP_END);
+    notification.setDuration(duration);
+    notification.add(component);
+    notification.addThemeVariants(variant);
+    notification.open();
+  }
+
+  private Text getMessageText(String message, Object... args) {
     FormattingTuple ft = MessageFormatter.arrayFormat(message, args, null);
-    Notification.show(ft.getMessage(), (int) TimeUnit.SECONDS.toMillis(3), Notification.Position.TOP_END);
+    Text text = new Text(ft.getMessage());
+    return text;
   }
 
   protected abstract List<Action> getActions();
