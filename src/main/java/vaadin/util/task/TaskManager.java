@@ -2,6 +2,7 @@ package vaadin.util.task;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -14,16 +15,23 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.MapMaker;
+import com.vaadin.flow.component.UIDetachedException;
+
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
+import vaadin.util.push.ItemManager;
+import vaadin.util.push.PushComponent;
 
 @Slf4j
-public class TaskManager {
+public class TaskManager extends ItemManager<Task> {
 
   public static final TaskManager INSTANCE = new TaskManager();
 
   private final ExecutorService _service;
   private final Map<String, TaskState> _stateMap = new ConcurrentHashMap<>();
+  private final Set<PushComponent> _pushCache;
 
   @Data
   public static class TaskState {
@@ -42,9 +50,16 @@ public class TaskManager {
   }
 
   private TaskManager() {
+    _pushCache = Collections.newSetFromMap(new MapMaker().weakKeys()
+                                                         .weakValues()
+                                                         .makeMap());
     _service = Executors.newCachedThreadPool();
     Runtime.getRuntime()
            .addShutdownHook(new Thread(() -> _service.shutdownNow()));
+  }
+
+  public synchronized void register(PushComponent pushComponent) {
+    _pushCache.add(pushComponent);
   }
 
   public synchronized void submitTask(Task task) {
@@ -75,8 +90,36 @@ public class TaskManager {
         }
       }
       state.setStopped(System.currentTimeMillis());
+      updateCounts();
       return null;
     }));
+    updateCounts();
+    updateFilterValues();
+  }
+
+  private synchronized void updateCounts() {
+    for (PushComponent pushComponent : ImmutableSet.copyOf(_pushCache)) {
+      doPush(pushComponent);
+    }
+  }
+
+  private void doPush(PushComponent pushComponent) {
+    if (pushComponent != null) {
+      try {
+        log.debug("push count {}", pushComponent);
+        pushComponent.push();
+      } catch (Throwable t) {
+        if (t instanceof UIDetachedException) {
+          deregister(pushComponent);
+        } else {
+          log.error("Unknown error while trying to push {}", t);
+        }
+      }
+    }
+  }
+
+  public void deregister(PushComponent pushComponent) {
+    _pushCache.remove(pushComponent);
   }
 
   public int getRunningJobCount() {
@@ -101,14 +144,15 @@ public class TaskManager {
     for (Entry<String, TaskState> entry : entrySet) {
       TaskState taskState = entry.getValue();
       if (taskState.getStopped() >= 0
-          && taskState.getStopped() + TimeUnit.MINUTES.toMillis(1) < System.currentTimeMillis()) {
+          && taskState.getStopped() + TimeUnit.HOURS.toMillis(1) < System.currentTimeMillis()) {
         log.info("removing old task {}", entry.getKey());
         _stateMap.remove(entry.getKey());
       }
     }
   }
 
-  public List<Task> getTasks() {
+  @Override
+  public List<Task> getItems() {
     cleanupOldJobs();
     Collection<TaskState> values = _stateMap.values();
     List<Task> tasks = new ArrayList<>();
@@ -140,6 +184,16 @@ public class TaskManager {
                .set(true);
       taskState.setTaskStatus(TaskStatus.CANCELING);
     }
+  }
+
+  @Override
+  protected boolean doUpdateData() {
+    return true;
+  }
+
+  @Override
+  protected long getUpdatePeriod() {
+    return -1;
   }
 
 }

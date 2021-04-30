@@ -10,7 +10,9 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.NoArgsConstructor;
 import lombok.Value;
+import vaadin.util.filter.Filterable;
 import vaadin.util.push.Item;
+import vaadin.util.push.Searchable;
 
 @Value
 @NoArgsConstructor(force = true, access = AccessLevel.PRIVATE)
@@ -20,19 +22,28 @@ import vaadin.util.push.Item;
 public class Task implements Item<Task> {
 
   @Builder.Default
+  @Searchable
   String id = UUID.randomUUID()
                   .toString();
 
   @Builder.Default
+  @Searchable
   Date created = new Date();
 
+  @Searchable
   String name;
+
+  @Searchable
   String description;
 
+  @Searchable
+  @Filterable("User")
   String user;
 
+  @Searchable
   TaskStatus taskStatus;
 
+  @Searchable
   Throwable throwable;
 
   TaskRunnable taskRunnable;
@@ -51,13 +62,9 @@ public class Task implements Item<Task> {
   }
 
   @Override
-  public String getSearchString() {
-    return id + " " + created + " " + name + " " + description + " " + user + " " + taskStatus + " " + throwable;
-  }
-
-  @Override
   public int compareTo(Task o) {
-    return name.compareTo(o.getName());
+    return o.getCreated()
+            .compareTo(created);
   }
 
 }

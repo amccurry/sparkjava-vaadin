@@ -29,29 +29,29 @@ public class PushManager {
     _timer.schedule(new TimerTask() {
       @Override
       public void run() {
-        for (PushComponent pushView : ImmutableSet.copyOf(_pushCache)) {
-          doPush(pushView);
+        for (PushComponent pushComponent : ImmutableSet.copyOf(_pushCache)) {
+          doPush(pushComponent);
         }
       }
     }, delay, period);
   }
 
-  public void register(PushComponent pushView) {
-    _pushCache.add(pushView);
+  public void register(PushComponent pushComponent) {
+    _pushCache.add(pushComponent);
   }
 
-  public void deregister(PushComponent pushView) {
-    _pushCache.remove(pushView);
+  public void deregister(PushComponent pushComponent) {
+    _pushCache.remove(pushComponent);
   }
 
-  private void doPush(PushComponent pushView) {
-    if (pushView != null) {
+  private void doPush(PushComponent pushComponent) {
+    if (pushComponent != null) {
       try {
-        log.debug("push {}", pushView);
-        pushView.push();
+        log.debug("push {}", pushComponent);
+        pushComponent.push();
       } catch (Throwable t) {
         if (t instanceof UIDetachedException) {
-          deregister(pushView);
+          deregister(pushComponent);
         } else {
           log.error("Unknown error while trying to push {}", t);
         }

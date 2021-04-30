@@ -2,12 +2,12 @@ package vaadin.util.push;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.text.NumberFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -47,6 +47,7 @@ import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.grid.GridVariant;
 import com.vaadin.flow.component.grid.ItemClickEvent;
 import com.vaadin.flow.component.html.Div;
+import com.vaadin.flow.component.html.Label;
 import com.vaadin.flow.component.icon.Icon;
 import com.vaadin.flow.component.icon.VaadinIcon;
 import com.vaadin.flow.component.menubar.MenuBar;
@@ -57,6 +58,7 @@ import com.vaadin.flow.component.textfield.TextField;
 import com.vaadin.flow.data.provider.DataCommunicator;
 import com.vaadin.flow.data.provider.DataProvider;
 import com.vaadin.flow.data.provider.ListDataProvider;
+import com.vaadin.flow.data.selection.MultiSelectionEvent;
 import com.vaadin.flow.data.selection.SelectionEvent;
 import com.vaadin.flow.data.selection.SelectionListener;
 import com.vaadin.flow.data.value.HasValueChangeMode;
@@ -70,31 +72,43 @@ import vaadin.util.filter.FilterPanel;
 import vaadin.util.filter.FilterPanelView;
 
 @Slf4j
-public abstract class BasePushView<ITEM extends Item<ITEM>> extends Div
-    implements PushComponent, SerializablePredicate<ITEM> {
+public abstract class BasePushView<ITEM extends Item<ITEM>> extends Div implements PushComponent {
 
   private static final Splitter SPACE_SPLITTER = Splitter.on(" ");
   private static final long serialVersionUID = 9064915736318224076L;
   private static final Comparator<Action> COMPARATOR = (o1, o2) -> o1.getName()
                                                                      .compareTo(o2.getName());
 
-  protected final AtomicReference<UI> _uiRef = new AtomicReference<>();
-  protected final ListDataProvider<ITEM> _dataProvider;
-  protected final Grid<ITEM> _grid;
-  protected final AtomicBoolean _shift = new AtomicBoolean();
-  protected final DataCommunicator<ITEM> _dataCommunicator;
-  protected final MenuBar _actionMenuBar;
-  protected final List<Action> _actions;
-  protected final Map<String, MenuItem> _actionMenuItems = new ConcurrentHashMap<>();
-  protected final AtomicReference<SerializablePredicate<ITEM>> _searchPredicate = new AtomicReference<>(t -> true);
-  protected final Div _menuDiv;
+  private final NumberFormat _format = NumberFormat.getInstance();
+  private final AtomicReference<UI> _uiRef = new AtomicReference<>();
+  private final ListDataProvider<ITEM> _dataProvider;
+  private final Grid<ITEM> _grid;
+  private final AtomicBoolean _shift = new AtomicBoolean();
+  private final DataCommunicator<ITEM> _dataCommunicator;
+  private final MenuBar _actionMenuBar;
+  private final List<Action> _actions;
+  private final Map<String, MenuItem> _actionMenuItems = new ConcurrentHashMap<>();
+  private final Div _menuDiv;
+  private final FilterPanel<ITEM> _filterPanel;
+  private final SerializablePredicate<ITEM> _filterPredicate;
+  private final Label _countText;
+  private final SearchableType<ITEM> _searchableType;
+  private final Button _clearSelections;
+  private final ItemManager<ITEM> _itemManager;
+  private SerializablePredicate<ITEM> _searchPredicate = t -> true;
 
-  public BasePushView() {
+  public BasePushView(ItemManager<ITEM> itemManager) {
+    _itemManager = itemManager;
+    Class<ITEM> itemClass = getItemClass();
+
     _dataProvider = DataProvider.ofCollection(getDataItems());
-    _grid = createGrid(_dataProvider);
+    GridBuilder<ITEM> builder = GridBuilder.create(_dataProvider)
+                                           .withFilter(getGridFilter());
+    _grid = createGrid(builder);
     _grid.addThemeVariants(GridVariant.LUMO_ROW_STRIPES);
     _dataProvider.setSortComparator((o1, o2) -> o1.compareTo(o2));
     _dataCommunicator = _grid.getDataCommunicator();
+    _searchableType = new SearchableType<ITEM>(itemClass);
 
     List<Action> actions = getActions();
     if (actions == null) {
@@ -127,6 +141,9 @@ public abstract class BasePushView<ITEM extends Item<ITEM>> extends Div
     _menuDiv = new Div();
     updateMenuLabel();
 
+    _filterPanel = new FilterPanel<>(_itemManager);
+    _filterPredicate = _filterPanel;
+
     MenuItem actionsMenuItem = _actionMenuBar.addItem(_menuDiv);
     SubMenu actionsSubMenu = actionsMenuItem.getSubMenu();
     for (Action action : _actions) {
@@ -140,8 +157,7 @@ public abstract class BasePushView<ITEM extends Item<ITEM>> extends Div
     Div topDiv = new Div();
     Div actionsDiv = new Div();
     actionsDiv.getStyle()
-              .set("display", "inline-block")
-              .set("margin-right", "10px");
+              .set("display", "inline-block");
 
     actionsDiv.add(_actionMenuBar);
 
@@ -152,15 +168,27 @@ public abstract class BasePushView<ITEM extends Item<ITEM>> extends Div
     Button button = new Button();
     button.setIcon(new Icon(VaadinIcon.REFRESH));
     button.addThemeVariants(ButtonVariant.LUMO_SUCCESS, ButtonVariant.LUMO_PRIMARY);
-    button.addClickListener(event -> push());
+    button.addClickListener(event -> {
+      refreshItems();
+      push();
+    });
+
+    _clearSelections = new Button("Clear Selections");
+    _clearSelections.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+    _clearSelections.setEnabled(false);
+    _clearSelections.addClickListener(event -> {
+      _grid.deselectAll();
+      push();
+    });
 
     topDiv.add(button);
     topDiv.add(actionsDiv);
+    topDiv.add(_clearSelections);
 
-    TextField textField = new TextField();
-    textField.setPlaceholder("search");
-    textField.addValueChangeListener(event -> {
-      String value = textField.getValue();
+    TextField searchField = new TextField();
+    searchField.setPlaceholder("search");
+    searchField.addValueChangeListener(event -> {
+      String value = searchField.getValue();
       List<String> parts = SPACE_SPLITTER.splitToList(value);
       List<String> tokens = new ArrayList<>();
       for (String part : parts) {
@@ -171,9 +199,9 @@ public abstract class BasePushView<ITEM extends Item<ITEM>> extends Div
         }
       }
       if (tokens.isEmpty()) {
-        _searchPredicate.set(t -> true);
+        _searchPredicate = t -> true;
       } else {
-        _searchPredicate.set(t -> {
+        _searchPredicate = t -> {
           String searchString = getSimpleSearchString(t);
           if (searchString == null) {
             return true;
@@ -185,26 +213,71 @@ public abstract class BasePushView<ITEM extends Item<ITEM>> extends Div
             }
           }
           return false;
-        });
+        };
       }
       push();
     });
-    textField.setValueChangeMode(ValueChangeMode.LAZY);
-    textField.setWidth("70%");
-    topDiv.add(textField);
+    searchField.setValueChangeMode(ValueChangeMode.LAZY);
+    searchField.setWidth("70%");
+    topDiv.add(searchField);
+    _countText = new Label();
+    updateCount();
+    topDiv.add(_countText);
     add(topDiv);
     _grid.addSelectionListener(getSelectionListener());
     _grid.addItemClickListener(onRowClickSelectOrDeselect());
     add(_grid);
-
   }
 
-  protected void updateMenuLabel() {
+  protected void refreshItems() {
+    _itemManager.updateData();
+    sendSuccessNotification("Data Refreshed");
+  }
+
+  protected abstract List<Action> getActions();
+
+  protected abstract Grid<ITEM> createGrid(GridBuilder<ITEM> builder);
+
+  protected Collection<ITEM> getDataItems() {
+    return _itemManager.getItems();
+  }
+
+  // protected List<Filter<ITEM>> getFilters() {
+  // return _itemManager.getFilters(this);
+  // }
+
+  public Set<ITEM> getSelectedItems() {
+    return _grid.getSelectedItems();
+  }
+
+  protected Grid<ITEM> getGrid() {
+    return _grid;
+  }
+
+  private void updateCount() {
+    int totalCount = _dataProvider.getItems()
+                                  .size();
+    int filterCount = _dataCommunicator.getItemCount();
+    if (filterCount == totalCount) {
+      _countText.setText(" Item Count: " + formatNumber(totalCount));
+    } else {
+      _countText.setText(" Item Count: " + formatNumber(filterCount) + " of " + formatNumber(totalCount));
+    }
+  }
+
+  private synchronized String formatNumber(long l) {
+    return _format.format(l);
+  }
+
+  private void updateMenuLabel() {
     int size = _grid.getSelectedItems()
                     .size();
+    if (size > 0) {
+      _clearSelections.setEnabled(true);
+    }
     _menuDiv.removeAll();
     if (size > 0) {
-      _menuDiv.add(new Text("Actions (" + size + ") "));
+      _menuDiv.add(new Text("Actions (" + formatNumber(size) + ") "));
       _menuDiv.add(new Icon(VaadinIcon.CHEVRON_CIRCLE_DOWN_O));
     } else {
       _menuDiv.add(new Text("Actions "));
@@ -212,19 +285,12 @@ public abstract class BasePushView<ITEM extends Item<ITEM>> extends Div
     }
   }
 
-  protected String getSimpleSearchString(ITEM item) {
-    return item.getSearchString();
+  private String getSimpleSearchString(ITEM item) {
+    return _searchableType.getSearchString(item);
   }
 
-  @Override
-  public boolean test(ITEM t) {
-    FilterPanel<ITEM> filterPanel = getFilterPanel();
-    if (filterPanel == null) {
-      return _searchPredicate.get()
-                             .test(t);
-    }
-    return filterPanel.test(t) && _searchPredicate.get()
-                                                  .test(t);
+  private SerializablePredicate<ITEM> getGridFilter() {
+    return t -> _filterPredicate.test(t) && _searchPredicate.test(t);
   }
 
   private ComponentEventListener<ClickEvent<MenuItem>> getActionListener(Action action) {
@@ -234,7 +300,7 @@ public abstract class BasePushView<ITEM extends Item<ITEM>> extends Div
         listener.onComponentEvent(event);
       } catch (Throwable t) {
         log.error("Unknown error", t);
-        sendError(t.getMessage(), t);
+        sendErrorNotification(t.getMessage(), t);
       }
       if (action.isClearSelectionsAndPushAfterAction()) {
         clearAndPush();
@@ -245,31 +311,27 @@ public abstract class BasePushView<ITEM extends Item<ITEM>> extends Div
   @Override
   protected void onAttach(AttachEvent attachEvent) {
     log.debug("attach");
+    _uiRef.set(attachEvent.getUI());
     Optional<Component> parent = getParent();
     if (parent.isPresent()) {
       Component component = parent.get();
       if (component instanceof FilterPanelView) {
         FilterPanelView filterPanelView = (FilterPanelView) component;
-        FilterPanel<ITEM> filterPanel = getFilterPanel();
-        if (filterPanel != null) {
+        if (!_filterPanel.isEmpty()) {
           filterPanelView.clearFilterPanel();
-          filterPanelView.setFilterPanel(filterPanel);
+          filterPanelView.setFilterPanel(_filterPanel);
         } else {
           filterPanelView.clearFilterPanel();
         }
       }
     }
-    _uiRef.set(attachEvent.getUI());
     PushManager.INSTANCE.register(this);
-  }
-
-  protected FilterPanel<ITEM> getFilterPanel() {
-    return null;
   }
 
   @Override
   protected void onDetach(DetachEvent detachEvent) {
     log.debug("detach");
+    _uiRef.set(null);
     PushManager.INSTANCE.deregister(this);
   }
 
@@ -285,12 +347,6 @@ public abstract class BasePushView<ITEM extends Item<ITEM>> extends Div
                 });
   }
 
-  protected void applyFilter() {
-    SerializablePredicate<ITEM> filter = _dataProvider.getFilter();
-    _dataProvider.clearFilters();
-    _dataProvider.setFilter(filter);
-  }
-
   protected interface DialogAction {
     void action();
   }
@@ -299,8 +355,7 @@ public abstract class BasePushView<ITEM extends Item<ITEM>> extends Div
     boolean validate();
   }
 
-  protected <FIELD extends AbstractField<?, ?>> void popupField(Div providedMessage, String confirmButtonLabel,
-      DialogAction dialogAction) {
+  public void createDialogBox(Div providedMessage, String confirmButtonLabel, DialogAction dialogAction) {
     Dialog dialog = new Dialog();
 
     dialog.setWidth("600px");
@@ -332,13 +387,13 @@ public abstract class BasePushView<ITEM extends Item<ITEM>> extends Div
     dialog.open();
   }
 
-  protected void clearAndPush() {
+  public void clearAndPush() {
     _grid.deselectAll();
     push();
   }
 
-  protected <FIELD extends AbstractField<?, ?>> void popupField(Div providedMessage, String confirmButtonLabel,
-      FIELD field, DialogAction dialogAction, DialogValidation validation) {
+  public <FIELD extends AbstractField<?, ?>> void createDialogBoxWithField(Div providedMessage,
+      String confirmButtonLabel, FIELD field, DialogAction dialogAction, DialogValidation validation) {
     Dialog dialog = new Dialog();
 
     dialog.setWidth("600px");
@@ -381,29 +436,39 @@ public abstract class BasePushView<ITEM extends Item<ITEM>> extends Div
     dialog.open();
   }
 
-  protected void doPush(UI ui) {
+  private void doPush(UI ui) {
     ui.access(() -> {
       _dataCommunicator.reset();
-      updateMenuLabel();
-
       Collection<ITEM> currentItems = _dataProvider.getItems();
-      List<ITEM> dataItems = getDataItems();
-      for (ITEM item : dataItems) {
-        if (!currentItems.contains(item)) {
-          currentItems.add(item);
-        }
-      }
-      ImmutableList<ITEM> list = ImmutableList.copyOf(currentItems);
-      for (ITEM item : list) {
-        if (!dataItems.contains(item)) {
-          currentItems.remove(item);
-        }
-      }
+      Collection<ITEM> dataItems = getDataItems();
+      updateDataProviderIfNeeded(currentItems, dataItems);
+      updateMenuLabel();
+      updateCount();
       ui.push();
     });
   }
 
-  protected ComponentEventListener<ItemClickEvent<ITEM>> onRowClickSelectOrDeselect() {
+  private void updateDataProviderIfNeeded(Collection<ITEM> currentItems, Collection<ITEM> dataItems) {
+    if (currentItems == dataItems) {
+      // same instance
+      return;
+    }
+    log.debug("start push prep");
+    for (ITEM item : dataItems) {
+      if (!currentItems.contains(item)) {
+        currentItems.add(item);
+      }
+    }
+    ImmutableList<ITEM> list = ImmutableList.copyOf(currentItems);
+    for (ITEM item : list) {
+      if (!dataItems.contains(item)) {
+        currentItems.remove(item);
+      }
+    }
+    log.debug("finish push prep");
+  }
+
+  private ComponentEventListener<ItemClickEvent<ITEM>> onRowClickSelectOrDeselect() {
     return event -> {
       ITEM item = event.getItem();
       if (_grid.getSelectedItems()
@@ -413,16 +478,27 @@ public abstract class BasePushView<ITEM extends Item<ITEM>> extends Div
         _grid.select(item);
       }
       updateActionMenuItemsEnablement();
+      push();
     };
   }
 
-  protected ActionEnabled disabledWhenNothingSelected(ActionEnabled actionEnabled) {
+  public ActionEnabled disabledWhenNothingSelected(ActionEnabled actionEnabled) {
     return () -> {
       Set<ITEM> selectedItems = _grid.getSelectedItems();
       if (selectedItems == null || selectedItems.isEmpty()) {
         return false;
       }
       return actionEnabled.isEnabled();
+    };
+  }
+
+  public ActionEnabled disabledWhenNothingSelected() {
+    return () -> {
+      Set<ITEM> selectedItems = _grid.getSelectedItems();
+      if (selectedItems == null || selectedItems.isEmpty()) {
+        return false;
+      }
+      return true;
     };
   }
 
@@ -436,20 +512,24 @@ public abstract class BasePushView<ITEM extends Item<ITEM>> extends Div
     }
   }
 
-  protected boolean hasActions() {
+  private boolean hasActions() {
     return _actions != null && !_actions.isEmpty();
   }
 
-  protected void sendSuccess(String message, Object... args) {
+  public void sendSuccessNotification(String message, Object... args) {
     Text text = getMessageText(message, args);
     sendNotificationInternal(text, (int) TimeUnit.SECONDS.toMillis(3), NotificationVariant.LUMO_SUCCESS, args);
   }
 
-  protected void sendError(String message, Throwable t, Object... args) {
+  public void sendErrorNotification(String message) {
+    sendErrorNotification(message, null);
+  }
+
+  public void sendErrorNotification(String message, Throwable t, Object... args) {
     Div div = new Div();
 
     Notification notification = new Notification();
-    
+
     Button button = new Button();
     button.addThemeVariants(ButtonVariant.LUMO_ERROR, ButtonVariant.LUMO_PRIMARY);
     button.setIcon(new Icon(VaadinIcon.CLOSE_CIRCLE_O));
@@ -475,7 +555,7 @@ public abstract class BasePushView<ITEM extends Item<ITEM>> extends Div
 
   }
 
-  protected void sendNotification(String message, Object... args) {
+  public void sendNotification(String message, Object... args) {
     Text text = getMessageText(message, args);
     sendNotificationInternal(text, (int) TimeUnit.SECONDS.toMillis(3), NotificationVariant.LUMO_PRIMARY, args);
   }
@@ -496,79 +576,72 @@ public abstract class BasePushView<ITEM extends Item<ITEM>> extends Div
     return text;
   }
 
-  protected abstract List<Action> getActions();
-
-  protected abstract Grid<ITEM> createGrid(ListDataProvider<ITEM> dataProvider);
-
-  protected abstract List<ITEM> getDataItems();
-
   private SelectionListener<Grid<ITEM>, ITEM> getSelectionListener() {
     return new SelectionListener<Grid<ITEM>, ITEM>() {
 
-      private static final long serialVersionUID = 9034050090339718079L;
+      private static final long serialVersionUID = 365720388006611903L;
 
-      private final Set<ITEM> _prevItems = new HashSet<>();
-      private final AtomicReference<ITEM> _lastSelected = new AtomicReference<>();
-      private final AtomicBoolean _alreadyProcessing = new AtomicBoolean();
+      private ITEM _prevSelection;
 
       @Override
       public void selectionChange(SelectionEvent<Grid<ITEM>, ITEM> event) {
-        if (_alreadyProcessing.get()) {
+        MultiSelectionEvent<Grid<ITEM>, ITEM> mevent = (MultiSelectionEvent<Grid<ITEM>, ITEM>) event;
+        if (!mevent.isFromClient()) {
           return;
         }
-        _alreadyProcessing.set(true);
         try {
-          Set<ITEM> currentItems = _grid.getSelectedItems();
-          for (ITEM item : currentItems) {
-            if (!_prevItems.contains(item)) {
-              // System.out.println("Added " + item + " " + _control.get());
-              if (_shift.get()) {
-                if (_lastSelected.get() != null) {
-
-                  int index1 = getIndex(_lastSelected.get());
-                  int index2 = getIndex(item);
-                  if (index1 < index2) {
-                    selectItemsBetweenForward(_lastSelected.get(), item);
-                  } else {
-                    selectItemsBetweenForward(item, _lastSelected.get());
-                  }
-                }
-              }
-              _lastSelected.set(item);
+          if (!mevent.getRemovedSelection()
+                     .isEmpty()) {
+            _prevSelection = null;
+            return;
+          }
+          ITEM newItem = getFirstItem(mevent.getAddedSelection());
+          if (_prevSelection != null && _shift.get()) {
+            int index1 = getSelectedItemIndex(_prevSelection);
+            int index2 = getSelectedItemIndex(newItem);
+            if (index1 < index2) {
+              selectItemsBetweenForward(index1, index2);
+            } else {
+              selectItemsBetweenForward(index2, index1);
             }
           }
-          _prevItems.clear();
-          _prevItems.addAll(currentItems);
-          updateActionMenuItemsEnablement();
+          _prevSelection = newItem;
         } finally {
-          _alreadyProcessing.set(false);
-        }
-        push();
-      }
-
-      private int getIndex(ITEM item) {
-        for (int i = 0; i < _dataCommunicator.getItemCount(); i++) {
-          if (item == _dataCommunicator.getItem(i)) {
-            return i;
-          }
-        }
-        return -1;
-      }
-
-      private void selectItemsBetweenForward(ITEM firstItem, ITEM lastItem) {
-        boolean mark = false;
-        for (int i = 0; i < _dataCommunicator.getItemCount(); i++) {
-          ITEM item = _dataCommunicator.getItem(i);
-          if (item == firstItem) {
-            mark = true;
-          } else if (item == lastItem) {
-            mark = false;
-          }
-          if (mark) {
-            _grid.select(item);
-          }
+          updateActionMenuItemsEnablement();
+          push();
         }
       }
     };
+
   }
+
+  private int getSelectedItemIndex(ITEM item) {
+    for (int i = 0; i < _dataCommunicator.getItemCount(); i++) {
+      if (item == _dataCommunicator.getItem(i)) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  private void selectItemsBetweenForward(int firstItemIndex, int lastItemIndex) {
+    int itemCount = _dataCommunicator.getItemCount();
+    for (int i = firstItemIndex; i < lastItemIndex && i < itemCount; i++) {
+      ITEM item = _dataCommunicator.getItem(i);
+      _grid.select(item);
+    }
+  }
+
+  private ITEM getFirstItem(Set<ITEM> items) {
+    if (items == null || items.isEmpty()) {
+      return null;
+    }
+    return items.iterator()
+                .next();
+  }
+
+  private <T> Class<T> getItemClass() {
+    return ClassHelper.getItemClass(BasePushView.class, getClass());
+  }
+
 }
