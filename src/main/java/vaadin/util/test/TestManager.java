@@ -4,7 +4,6 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Random;
-import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 
 import vaadin.util.filter.Filter;
@@ -27,8 +26,6 @@ public class TestManager extends ItemManager<TestItem> {
       items.add(TestItem.builder()
                         .testEnum(values[random.nextInt(values.length)])
                         .build());
-      UUID.randomUUID()
-          .toString();
     }
     _itemsRef.set(items);
     _filterInfo = new FilterInfo<>(TestItem.class);

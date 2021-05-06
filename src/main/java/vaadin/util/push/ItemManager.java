@@ -71,8 +71,8 @@ public abstract class ItemManager<ITEM> {
 
   public abstract Collection<ITEM> getItems();
 
-  public List<Filter<ITEM>> getFilters(PushComponent pushComponent) {
-    return _filterInfo.getFilters(pushComponent);
+  public List<Filter<ITEM>> getFilters(PushComponent... pushComponents) {
+    return _filterInfo.getFilters(pushComponents);
   }
 
 }

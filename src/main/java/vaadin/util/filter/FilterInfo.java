@@ -3,6 +3,7 @@ package vaadin.util.filter;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
@@ -64,12 +65,12 @@ public class FilterInfo<ITEM> {
     lambdaAccessorMap.put(filterable.value(), new LambdaAccessor<>(clazz, method.getName(), method.getReturnType()));
   }
 
-  public List<Filter<ITEM>> getFilters(PushComponent pushComponent) {
+  public List<Filter<ITEM>> getFilters(PushComponent... pushComponents) {
     List<String> filterNames = new ArrayList<>(_lambdaAccessorMap.keySet());
     if (filterNames.isEmpty()) {
       return ImmutableList.of();
     }
-    _pushCache.add(pushComponent);
+    _pushCache.addAll(Arrays.asList(pushComponents));
     Collections.sort(filterNames);
     Builder<Filter<ITEM>> builder = ImmutableList.builder();
     for (String filterName : filterNames) {
@@ -84,7 +85,9 @@ public class FilterInfo<ITEM> {
                           }
                           selectedItems.addAll(allSelectedItems);
                           selectedItems.retainAll(allSelectedItems);
-                          pushComponent.push();
+                          for (PushComponent pushComponent : pushComponents) {
+                            pushComponent.push();
+                          }
                         })
                         .options(() -> getOptions(filterName))
                         .predicate(t -> {

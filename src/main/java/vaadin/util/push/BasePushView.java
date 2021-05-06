@@ -141,7 +141,7 @@ public abstract class BasePushView<ITEM extends Item<ITEM>> extends Div implemen
     _menuDiv = new Div();
     updateMenuLabel();
 
-    _filterPanel = new FilterPanel<>(_itemManager);
+    _filterPanel = new FilterPanel<>(_itemManager, this);
     _filterPredicate = _filterPanel;
 
     MenuItem actionsMenuItem = _actionMenuBar.addItem(_menuDiv);
@@ -438,6 +438,7 @@ public abstract class BasePushView<ITEM extends Item<ITEM>> extends Div implemen
 
   private void doPush(UI ui) {
     ui.access(() -> {
+      _filterPanel.push();
       _dataCommunicator.reset();
       Collection<ITEM> currentItems = _dataProvider.getItems();
       Collection<ITEM> dataItems = getDataItems();

@@ -12,7 +12,6 @@ import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.progressbar.ProgressBar;
 
 import lombok.extern.slf4j.Slf4j;
-import tack.manager.app.TestMode;
 import vaadin.util.action.Action;
 import vaadin.util.push.BasePushView;
 import vaadin.util.push.GridBuilder;
