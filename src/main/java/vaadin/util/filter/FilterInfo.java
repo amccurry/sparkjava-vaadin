@@ -96,7 +96,17 @@ public class FilterInfo<ITEM> {
                           } else if (t == null) {
                             return false;
                           } else {
-                            return selectedItems.contains(accessor.getValue(t));
+                            Object value = accessor.getValue(t);
+                            if (value instanceof Collection) {
+                              for (Object o : (Collection<?>) value) {
+                                if (selectedItems.contains(o)) {
+                                  return true;
+                                }
+                              }
+                              return false;
+                            } else {
+                              return selectedItems.contains(value);
+                            }
                           }
                         })
                         .build());
@@ -170,7 +180,15 @@ public class FilterInfo<ITEM> {
     for (ITEM item : items) {
       Object object = lambdaAccessor.getValue(item);
       if (object != null) {
-        values.add(object.toString());
+        if (object instanceof Collection) {
+          for (Object o : (Collection<?>) object) {
+            if (o != null) {
+              values.add(o.toString());
+            }
+          }
+        } else {
+          values.add(object.toString());
+        }
       }
     }
     return values;

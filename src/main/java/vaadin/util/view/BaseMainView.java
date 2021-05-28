@@ -20,6 +20,7 @@ import com.vaadin.flow.router.BeforeEnterObserver;
 import com.vaadin.flow.router.RouterLink;
 
 import lombok.extern.slf4j.Slf4j;
+import tack.manager.app.task.TaskView;
 import vaadin.util.filter.FilterPanel;
 import vaadin.util.filter.FilterPanelView;
 import vaadin.util.push.PushComponent;
@@ -46,13 +47,13 @@ public abstract class BaseMainView extends AppLayout implements BeforeEnterObser
     addToDrawer(_tabs);
     _filterDiv = new Div();
     Style style = _filterDiv.getStyle();
-    style.set("padding", "19px");
+    style.set("padding", "5px");
     _filterDiv.setVisible(false);
     addToDrawer(_filterDiv);
 
     addToNavbar(new DrawerToggle());
     setPrimarySection(Section.NAVBAR);
-    addToNavbar(new Span(title));
+    addToNavbar(new Span("Tack Manager"));
     updateTaskCount();
   }
 

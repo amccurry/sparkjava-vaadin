@@ -38,7 +38,7 @@ public class FilterPanel<ITEM> extends Div implements SerializablePredicate<ITEM
     Style style = getStyle();
     style.set("background-color", "#F8F8F8");
     style.set("min-height", "20px");
-    style.set("padding", "19px");
+    style.set("padding", "6px");
     style.set("margin-bottom", "20px");
     style.set("border", "1px solid #DCDCDC");
     style.set("border-radius", "2px");
